@@ -1,11 +1,13 @@
 import { Input } from 'antd';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import styled from 'styled-components';
 
 import Message from './Message';
 import Header from './Header';
-import { AppContext } from '../../../contexts/AppProvider';
+import { useAppContext, useAppDispatch } from '../../../hooks';
+import { createMessage, getMessage, leaveRoom } from '../../../contexts/action';
+import { SET_MESSAGES } from '../../../contexts/constants';
 
 const StyledWrapper = styled.div`
   & {
@@ -43,14 +45,16 @@ const StyledWrapper = styled.div`
 function ChatWindow() {
   const { roomId } = useParams();
   const [inputMessage, setInputMessage] = useState('');
-  const appState = useContext(AppContext);
+  const appState = useAppContext();
   const [loading, setLoading] = useState(true);
+  const dispatch = useAppDispatch();
 
-  const { getMessage, createMessage, leaveRoom, state } = appState;
+  const { state } = appState;
 
   useEffect(() => {
     setLoading(true);
-    getMessage(roomId).then(() => {
+    getMessage(roomId).then((messages) => {
+      dispatch({ type: SET_MESSAGES, payload: messages });
       setLoading(false);
     });
     return () => {

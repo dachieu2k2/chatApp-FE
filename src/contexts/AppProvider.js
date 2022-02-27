@@ -1,34 +1,19 @@
-import axios from "axios";
-import React, { createContext, useContext, useEffect, useReducer } from "react";
-import { useNavigate } from "react-router-dom";
-import io from "socket.io-client";
+import React, { createContext, useEffect, useReducer } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-import appReducer from "../reducers/AppReducer";
-import {
-  ADD_MESSAGE,
-  ADD_ROOM,
-  apiConfig,
-  apiUrl,
-  DELETE_MESSAGE,
-  DELETE_ROOM,
-  ioUrl,
-  SET_MESSAGES,
-  SET_ROOMS,
-  UPDATE_NEWEST_MESSAGE,
-} from "./constants";
-import { UserContext } from "./UserProvider";
+import appReducer from '../reducers/AppReducer';
+import { SET_ROOMS } from './constants';
+import { useUserContext } from '../hooks';
+import { socket } from './socket';
+import { getAllRoom } from './action';
 
 const AppContext = createContext(null);
-
-const socket = io(ioUrl, {
-  transports: ["websocket"],
-});
+const DispatchContext = createContext(null);
 
 const AppProvider = ({ children }) => {
-  let navigate = useNavigate();
+  const navigate = useNavigate();
 
-  // userContext
-  const { user } = useContext(UserContext);
+  const { user } = useUserContext();
 
   const [state, dispatch] = useReducer(appReducer, {
     rooms: [],
@@ -37,19 +22,16 @@ const AppProvider = ({ children }) => {
 
   useEffect(() => {
     if (user) {
-      getAllRoom();
+      getAllRoom().then((response) => {
+        dispatch({ type: SET_ROOMS, payload: response.data });
+        navigate(`/rooms/${response.data[0]?._id ?? ''}`);
+      });
     }
   }, [user]);
 
   useEffect(() => {
-    socket.on("connect", () => {
-      console.log(`Io connected ${socket.id}`);
-    });
-  }, []);
-
-  useEffect(() => {
     if (user) {
-      socket.on("update room", (allFriendId, action) => {
+      socket.on('update room', (allFriendId, action) => {
         if (allFriendId.includes(user._id)) {
           dispatch(action);
         }
@@ -59,164 +41,17 @@ const AppProvider = ({ children }) => {
 
   useEffect(() => {
     if (user) {
-      socket.on("update message", (action) => {
-        console.log(action);
+      socket.on('update message', (action) => {
         dispatch(action);
       });
     }
   }, [user]);
 
-  const getAllRoom = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.get(`${apiUrl}/rooms`, apiConfig());
-    dispatch({ type: SET_ROOMS, payload: response.data });
-    navigate(`/rooms/${response.data[0]?._id ?? ""}`);
-  };
-
-  /**
-   * @type {(roomId: string) => void}
-   */
-  const getMessage = async (roomId) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.get(
-      `${apiUrl}/messages/${roomId}`,
-      apiConfig()
-    );
-    dispatch({ type: SET_MESSAGES, payload: response.data });
-    socket.emit("join room", { roomId });
-  };
-
-  /**
-   * @type {(body: { roomId: string, content: string }) => void}
-   */
-  const createMessage = async (body) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.post(
-      `${apiUrl}/messages/create`,
-      body,
-      apiConfig()
-    );
-    // dispatch({ type: ADD_MESSAGE, payload: response.data });
-    socket.emit("create message", {
-      roomId: body.roomId,
-      type: ADD_MESSAGE,
-      payload: response.data,
-    });
-    socket.emit("update newest message", {
-      roomId: body.roomId,
-      type: UPDATE_NEWEST_MESSAGE,
-      payload: response.data,
-    });
-  };
-
-  const deleteMessage = async (body) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.delete(
-      `${apiUrl}/messages/${body.idMessage}`,
-      apiConfig()
-    );
-    socket.emit("delete message", {
-      roomId: body.roomId,
-      type: DELETE_MESSAGE,
-      payload: response.data,
-    });
-    socket.emit("update newest message", {
-      roomId: body.roomId,
-      type: UPDATE_NEWEST_MESSAGE,
-      payload: response.data,
-    });
-  };
-
-  /**
-   * @type {(body: {name: string, friendNameList: string[]}) => void}
-   *
-   */
-  const createRoom = async (body) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.post(
-      `${apiUrl}/rooms/create`,
-      body,
-      apiConfig()
-    );
-    // dispatch({ type: ADD_ROOM, payload: response.data });
-    socket.emit("create room", {
-      friendNameList: [...body.friendNameList, user.username],
-      type: ADD_ROOM,
-      payload: response.data,
-    });
-    navigate(`/rooms/${response.data._id}`);
-  };
-  const deleteRoom = async (idRoom) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.delete(
-      `${apiUrl}/rooms/${idRoom}`,
-      apiConfig()
-    );
-    dispatch({ type: DELETE_ROOM, payload: response.data });
-    navigate(`/rooms`);
-  };
-
-  /**
-   * @type {(body: {name: string, friendNameList: string[]}) => void}
-   *
-   */
-  const invite = async (body) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-    const response = await axios.post(
-      `${apiUrl}/rooms/invite`,
-      body,
-      apiConfig()
-    );
-    socket.emit("create room", {
-      friendNameList: body.friendNameList,
-      type: ADD_ROOM,
-      payload: response.data,
-    });
-  };
-
-  /**
-   * @type {(roomId: string) => void}
-   *
-   */
-  let leaveRoom = (roomId) => {
-    socket.emit("leave room", { roomId });
-  };
-
-  const appContextData = {
-    state,
-    getMessage,
-    createMessage,
-    createRoom,
-    leaveRoom,
-    invite,
-    deleteMessage,
-    deleteRoom,
-  };
-
   return (
-    <AppContext.Provider value={appContextData}>{children}</AppContext.Provider>
+    <DispatchContext.Provider value={dispatch}>
+      <AppContext.Provider value={{ state }}>{children}</AppContext.Provider>
+    </DispatchContext.Provider>
   );
 };
 
-export { AppProvider, AppContext };
+export { AppProvider, AppContext, DispatchContext };
